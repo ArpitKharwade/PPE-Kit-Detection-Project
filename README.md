@@ -1,19 +1,58 @@
-# PPE Kit Detection using YOLO and OpenCV
+# Detect-the-PPE-Kit-in-Automobile-Manufacturing-Project
 
-This project aims to detect Personal Protective Equipment (PPE) such as helmets, vests, gloves, and masks using YOLO (You Only Look Once) object detection algorithm, implemented with OpenCV in Python. It is designed to ensure compliance with safety standards in industrial and construction settings.
+## Table of Contents
 
----
+1. [Introduction](#introduction)
+2. [Installation](#installation)
+3. [Usage](#usage)
 
-## Features
-- Real-time detection of PPE items.
-- Pre-trained YOLOv4/YOLOv5 models for efficient detection.
-- Integration with OpenCV for image and video stream processing.
-- Easy setup and usage with Python and VSCode.
+## Introduction
 
----
+This project aims to detect Personal Protective Equipment (PPE) kits in an automobile manufacturing environment using computer vision techniques.
 
-## Prerequisites
+<!-- ## Project Structure 
+ 
+```
+/c:/jupyter/Infosys Intern Project/Detect-the-PPE-Kit-in-Automobile-Manufacturing-Project/
+│
+├── data/
+│   ├── raw/
+│   ├── processed/
+│
+├── notebooks/
+│   ├── data_preprocessing.ipynb
+│   ├── model_training.ipynb
+│
+├── src/
+│   ├── data_preprocessing.py
+│   ├── model.py
+│
+├── README.md
+└── requirements.txt
+``` -->
 
-1. **Hardware Requirements:**
-   - A Computer System with 4GB RAM(Minimum) and Processor- Intel i3 (Minimum)
-   - A GPU for faster inference (optional)
+## Installation
+
+1. Clone the repository:
+    ```sh
+    git clone /c:/jupyter/Infosys Intern Project/Detect-the-PPE-Kit-in-Automobile-Manufacturing-Project
+    ```
+2. Navigate to the project directory:
+    ```sh
+    cd Detect-the-PPE-Kit-in-Automobile-Manufacturing-Project
+    ```
+3. Install the required packages:
+    ```sh
+    pip install -r requirements.txt
+    ```
+
+## Usage
+
+1. Run the data preprocessing script:
+    ```sh
+    python src/data_preprocessing.py
+    ```
+2. Train the model:
+    ```sh
+    python src/model.py
+    ```
