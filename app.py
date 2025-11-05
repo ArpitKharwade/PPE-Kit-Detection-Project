@@ -1,110 +1,147 @@
+
+
 import streamlit as st
 from ultralytics import YOLO
-import cv2
-import cvzone
-import math
-import time
-import tempfile
-import os
+import cv2, cvzone, math, tempfile, os, time
 from collections import Counter
+import numpy as np
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode, RTCConfiguration
 
-# Sidebar
-st.sidebar.image("https://img.icons8.com/color/96/000000/hard-hat.png", width=80)
-st.sidebar.title("PPE Kit Detection System")
-st.sidebar.markdown("Detect PPE compliance in real-time or from video files using AI.")
+# ---------- UI CONFIG ---------
+st.set_page_config(page_title="PPE-Kit Detection System", layout="wide")
 
-# Main UI
-st.title("🦺 PPE Kit Detection System")
+# Custom CSS for modern UI
 st.markdown("""
-Welcome to the PPE Kit Detection System!  
-- Select your video source (webcam or upload a video).
-- Click **Start Detection** to begin.
-- Results will be displayed below with bounding boxes and class labels.
-""")
+<style>
+body {background-color: #0E1117;}
+.css-1d391kg, .css-1adrfps {background: #10151B !important;}
+.sidebar .sidebar-content {background-color: #0D0F13 !important;}
+.stButton>button {
+    border-radius: 10px;
+    background: linear-gradient(90deg,#2E77FF,#4BD5EE);
+    border: none;
+    color: white;
+    font-size: 18px;
+    padding: .6rem 1.2rem;
+}
+.stButton>button:hover {transform: scale(1.03);}
+.dataCard {
+    padding:15px;
+    border-radius:10px;
+    background:rgba(255,255,255,0.05);
+    color:white;
+}
+h2, h3, h4, p, label {color:white !important;}
+</style>
+""", unsafe_allow_html=True)
 
-source = st.selectbox("Select Video Source", ["Webcam", "Upload Video"])
-uploaded_file = None
-if source == "Upload Video":
-    uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
-
-run_detection = st.button("🚦 Start Detection")
+# ---------- MODEL LOADING ----------
+@st.cache_resource
+def load_model(): return YOLO("best.pt")
+model = load_model()
 
 classNames = [
-    'Hardhat', 'Mask', 'NO-Hardhat', 'NO-Mask', 'NO-Safety Vest', 'Person',
-    'Safety Cone', 'Safety Vest', 'machinery', 'vehicle'
+    'Hardhat','Mask','NO-Hardhat','NO-Mask','NO-Safety Vest',
+    'Person','Safety Cone','Safety Vest','machinery','vehicle'
 ]
 
-model = YOLO("best.pt")
+# ---------- SIDEBAR ----------
+st.sidebar.image("https://img.icons8.com/color/96/worker-male--v1.png", width=120)
+st.sidebar.markdown("<h2>PPE-Kit Detection System</h2>", unsafe_allow_html=True)
+source = st.sidebar.radio("🎥 Input Source", ["Live Webcam", "Upload Video"])
+st.sidebar.info("Detect PPE compliance in real-time.")
 
+# ---------- TURN SERVER CONFIG ----------
+RTC_CONFIGURATION = RTCConfiguration({
+    "iceServers": [
+        { "urls": ["stun:stun.l.google.com:19302"] },
+        {
+            "urls": "turn:global.relay.metered.ca:80",
+            "username": "openai",
+            "credential": "openai"
+        }
+    ]
+})
+
+# ---------- YOLO DETECTION FUNCTION ----------
 def process_frame(img):
-    detected_classes = []
+    detected = []
     results = model(img, stream=True)
     for r in results:
-        boxes = r.boxes
-        for box in boxes:
-            x1, y1, x2, y2 = box.xyxy[0]
-            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            w, h = x2 - x1, y2 - y1
-            cvzone.cornerRect(img, (x1, y1, w, h))
-            conf = math.ceil((box.conf[0] * 100)) / 100
+        for box in r.boxes:
+            x1,y1,x2,y2 = map(int, box.xyxy[0])
             cls = int(box.cls[0])
-            detected_classes.append(classNames[cls])
-            cvzone.putTextRect(img, f'{classNames[cls]} {conf}', (max(0, x1), max(35, y1)), scale=1, thickness=1)
-    return img, detected_classes
+            conf = round(float(box.conf[0]),2)
+            detected.append(classNames[cls])
+            cvzone.cornerRect(img,(x1,y1,x2-x1,y2-y1))
+            cvzone.putTextRect(img,f"{classNames[cls]} {conf}",(x1,y1-5),scale=1,thickness=1)
+    return img, detected
 
-if run_detection:
-    st.info("Detection started. Please wait...")
-    if source == "Webcam":
-        cap = cv2.VideoCapture(0)
-        st.success("Using webcam for detection.")
-    else:
-        if uploaded_file is not None:
-            tfile = tempfile.NamedTemporaryFile(delete=False)
-            tfile.write(uploaded_file.read())
-            cap = cv2.VideoCapture(tfile.name)
-            st.success("Using uploaded video for detection.")
+class VideoProcessor(VideoProcessorBase):
+    def __init__(self): self.summary=""
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        img, cls = process_frame(img)
+        if cls:
+            txt="<br>".join([f"✔️ <b>{c}</b>: {n}" for c,n in Counter(cls).items()])
+            self.summary=f"### 📝 Detection Summary<br>{txt}"
         else:
-            st.warning("Please upload a video file.")
-            st.stop()
+            self.summary="### 🚫 No PPE Detected"
+        return frame.from_ndarray(img, format="bgr24")
 
-    stframe = st.empty()
-    summary_placeholder = st.empty()
-    prev_frame_time = 0
-    fps = 0
+# ---------- MAIN HEADER ----------
+st.markdown("<h1 style='text-align:center;'>PPE-Kit Detection System</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;'>Monitor worker safety with YOLOv8 in real-time 🚧</p>", unsafe_allow_html=True)
+st.write("")
 
-    while cap.isOpened():
-        success, img = cap.read()
-        if not success:
-            break
+# ---------- LIVE WEBCAM MODE ----------
+if source == "Live Webcam":
+    st.subheader("📡 Live Camera Feed")
+    
+    ctx = webrtc_streamer(
+        key="ppe-live",
+        mode=WebRtcMode.SENDRECV,
+        rtc_configuration=RTC_CONFIGURATION,
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=True,
+        video_processor_factory=VideoProcessor
+    )
 
-        img, detected_classes = process_frame(img)
+    if ctx and ctx.state.playing:
+        summary_box = st.empty()
+        while True:
+            if ctx.video_processor:
+                summary_box.markdown(ctx.video_processor.summary, unsafe_allow_html=True)
+            time.sleep(1)
 
-        new_frame_time = time.time()
-        if prev_frame_time != 0:
-            fps = 1 / (new_frame_time - prev_frame_time)
-            fps = int(fps)
-        prev_frame_time = new_frame_time
+# ---------- VIDEO UPLOAD MODE ----------
+else:
+    st.subheader("🎬 Upload Video for Detection")
+    video = st.file_uploader("Upload a video", type=["mp4","avi","mov"])
 
-        cvzone.putTextRect(img, f'FPS: {fps}', (10, 50), scale=1, thickness=1)
+    if video and st.button("🚦 Start Detection"):
+        tfile = tempfile.NamedTemporaryFile(delete=False)
+        tfile.write(video.read())
+        cap = cv2.VideoCapture(tfile.name)
 
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        stframe.image(img_rgb, channels="RGB", use_column_width=True)
+        stframe, stats = st.empty(), st.empty()
+        prev = 0
+        
+        while cap.isOpened():
+            ret, img = cap.read()
+            if not ret: break
 
-        # Show summary of detections for the current frame only
-        if detected_classes:
-            summary = Counter(detected_classes)
-            summary_text = "### Detection Summary (Current Frame)\n"
-            for k, v in summary.items():
-                summary_text += f"- **{k}**: {v}\n"
-            summary_placeholder.markdown(summary_text)
-        else:
-            summary_placeholder.markdown("### Detection Summary (Current Frame)\n- No objects detected.")
+            img, cls = process_frame(img)
+            now = time.time()
+            fps = int(1/(now-prev)) if prev else 0; prev = now
 
-    cap.release()
-    if source == "Upload Video" and uploaded_file is not None:
-        os.remove(tfile.name)
-    st.success("Detection finished.")
+            cvzone.putTextRect(img, f"FPS: {fps}", (10,50))
+            stframe.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), use_container_width=True)
 
-# Footer
-st.markdown("---")
-st.markdown("Made with ❤️ using Streamlit & YOLO | [GitHub](https://github.com/ArpitKharwade/PPE-Kit-Detection-Project)")
+            if cls:
+                txt = "<br>".join([f"✔️ <b>{c}</b>: {n}" for c,n in Counter(cls).items()])
+                stats.markdown(f"### 📝 Detection Summary<br>{txt}", unsafe_allow_html=True)
+
+        cap.release(); os.remove(tfile.name)
+        st.success("✅ Video Processing Completed!")
+
